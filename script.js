@@ -60,7 +60,10 @@ if (testimonialCarousel) {
   const counter = testimonialCarousel.querySelector('.testimonial-count');
   const previous = testimonialCarousel.querySelector('[data-testimonial-prev]');
   const next = testimonialCarousel.querySelector('[data-testimonial-next]');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let currentIndex = 0;
+  let autoplayTimer = null;
+  let carouselIsVisible = !('IntersectionObserver' in window);
 
   const updateControls = () => {
     currentIndex = Math.max(0, Math.min(slides.length - 1, Math.round(viewport.scrollLeft / viewport.clientWidth)));
@@ -79,13 +82,28 @@ if (testimonialCarousel) {
 
   const goTo = (index) => {
     currentIndex = (index + slides.length) % slides.length;
-    viewport.scrollTo({ left: currentIndex * viewport.clientWidth, behavior: 'smooth' });
+    viewport.scrollTo({ left: currentIndex * viewport.clientWidth, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
     updateControls();
   };
 
-  previous?.addEventListener('click', () => goTo(currentIndex - 1));
-  next?.addEventListener('click', () => goTo(currentIndex + 1));
-  dots.forEach((dot, index) => dot.addEventListener('click', () => goTo(index)));
+  const stopAutoplay = () => {
+    if (autoplayTimer !== null) {
+      window.clearInterval(autoplayTimer);
+      autoplayTimer = null;
+    }
+  };
+
+  const startAutoplay = () => {
+    stopAutoplay();
+    const isBlocked = reducedMotion.matches || document.hidden || !carouselIsVisible ||
+      testimonialCarousel.matches(':hover') || testimonialCarousel.contains(document.activeElement);
+    if (isBlocked || slides.length < 2) return;
+    autoplayTimer = window.setInterval(() => goTo(currentIndex + 1), 6500);
+  };
+
+  previous?.addEventListener('click', () => { goTo(currentIndex - 1); startAutoplay(); });
+  next?.addEventListener('click', () => { goTo(currentIndex + 1); startAutoplay(); });
+  dots.forEach((dot, index) => dot.addEventListener('click', () => { goTo(index); startAutoplay(); }));
   viewport.addEventListener('scroll', updateControls, { passive: true });
   viewport.addEventListener('keydown', (event) => {
     if (event.key === 'ArrowLeft') {
@@ -97,5 +115,24 @@ if (testimonialCarousel) {
     }
   });
   window.addEventListener('resize', updateControls, { passive: true });
+  testimonialCarousel.addEventListener('mouseenter', stopAutoplay);
+  testimonialCarousel.addEventListener('mouseleave', startAutoplay);
+  testimonialCarousel.addEventListener('focusin', stopAutoplay);
+  testimonialCarousel.addEventListener('focusout', () => window.setTimeout(startAutoplay, 0));
+  viewport.addEventListener('pointerdown', stopAutoplay);
+  viewport.addEventListener('pointerup', startAutoplay);
+  viewport.addEventListener('pointercancel', startAutoplay);
+  document.addEventListener('visibilitychange', startAutoplay);
+  reducedMotion.addEventListener('change', startAutoplay);
+
+  if ('IntersectionObserver' in window) {
+    const carouselVisibilityObserver = new IntersectionObserver((entries) => {
+      carouselIsVisible = entries[0].isIntersecting;
+      startAutoplay();
+    }, { threshold: 0.2 });
+    carouselVisibilityObserver.observe(testimonialCarousel);
+  }
+
   updateControls();
+  startAutoplay();
 }
